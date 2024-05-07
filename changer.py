@@ -1,10 +1,8 @@
 import re
 import requests
 from docx import Document
-import spacy
 
 def fetch_wikipedia_summary(city, lang='pl'):
-    """Fetch the first few sentences from Wikipedia for a given city in a specified language."""
     base_url = "https://pl.wikipedia.org/w/api.php"
     params = {
         'action': 'query',
@@ -21,44 +19,33 @@ def fetch_wikipedia_summary(city, lang='pl'):
     return page.get('extract', 'No summary available.')
 
 def replace_city_and_description_polish(original_text, original_city, new_city, original_inflections, new_inflections):
-    """Replace the original city and its Wikipedia description with a new city and its Wikipedia description, using manual inflections."""
-    # Fetch the Wikipedia descriptions for both cities
     original_city_desc = fetch_wikipedia_summary(original_city, lang='pl')
     new_city_desc = fetch_wikipedia_summary(new_city, lang='pl')
     
-    print(f"Original City Description for {original_city}: {original_city_desc[:150]}...")  # Debugging line to check description
-    print(f"New City Description for {new_city}: {new_city_desc[:150]}...")  # Debugging line to check description
+    print(f"Original City Description for {original_city}: {original_city_desc[:150]}...")
+    print(f"New City Description for {new_city}: {new_city_desc[:150]}...")
 
-    # Replace all specified inflections of the original city's name with the corresponding new city's name inflections
     updated_text = original_text
     for old_inflection, new_inflection in zip(original_inflections, new_inflections):
         updated_text = re.sub(r'\b' + re.escape(old_inflection) + r'\b', new_inflection, updated_text, flags=re.IGNORECASE)
     
-    # Ensure the original description is replaced with the new city's description
     updated_text = updated_text.replace(original_city_desc, new_city_desc)
     
     return updated_text
 
 def save_text_to_word(text, filename):
-    """Save the given text to a Word document."""
     doc = Document()
     doc.add_paragraph(text)
     doc.save(filename)
 
 def generate_and_save_documents(original_text, city_pairs):
-    """Generate documents for different city replacements and save each to a Word file."""
     for original_city, new_city, original_inflections, new_inflections in city_pairs:
-        # Replace city and its description
         updated_text = replace_city_and_description_polish(original_text, original_city, new_city, original_inflections, new_inflections)
-        
-        # Generate a filename
         filename = f'relocation_{new_city}.docx'
         
-        # Save to a Word document
         save_text_to_word(updated_text, filename)
         print(f"Saved document for {new_city} as {filename}")
 
-# Example city pairs and inflections
 city_pairs = [
     ("Kraków", "Łódź", ["Kraków", "Krakowie", "w Krakowie", "Krakowski"], ["Łódź", "Łodzi", "w Łodźi", "Łódzki"]),
     ("Kraków", "Warszawa", ["Kraków", "Krakowie", "w Krakowie", "Krakowski"], ["Warszawa", "Warszawie", "w Warszawie", "Warszawski"]),
