@@ -1,9 +1,10 @@
 import re
 import requests
 from docx import Document
+import difflib
 
-def fetch_wikipedia_summary(city, lang='pl'):
-    base_url = "https://pl.wikipedia.org/w/api.php"
+def summary(city, lang='pl'):
+    base_url = "https://{lang}.wikipedia.org/w/api.php".format(lang=lang)
     params = {
         'action': 'query',
         'format': 'json',
@@ -15,22 +16,40 @@ def fetch_wikipedia_summary(city, lang='pl'):
     }
     response = requests.get(base_url, params=params)
     data = response.json()
-    page = next(iter(data['query']['pages'].values()))
+    page = next(iter(data['query']['pages'].values()), {})
     return page.get('extract', 'No summary available.')
 
-def replace_city_and_description_polish(original_text, original_city, new_city, original_inflections, new_inflections):
-    original_city_desc = fetch_wikipedia_summary(original_city, lang='pl')
-    new_city_desc = fetch_wikipedia_summary(new_city, lang='pl')
-    
-    print(f"Original City Description for {original_city}: {original_city_desc[:150]}...")
-    print(f"New City Description for {new_city}: {new_city_desc[:150]}...")
+def find_best_match_and_replace(original_text, original_description, new_description):
+    s = difflib.SequenceMatcher(None, original_text, original_description)
+    best_ratio = 0.5
+    best_match = None
 
+    for block in s.get_matching_blocks():
+        if block.size == 0:
+            continue
+        match_ratio = s.ratio()
+        if match_ratio > best_ratio:
+            best_ratio = match_ratio
+            best_match = block
+
+    if best_match:
+        start, end = best_match.a, best_match.a + best_match.size
+        if end - start > 100:
+            return original_text[:start] + new_description + original_text[end:]
+    return original_text
+
+
+def replace(original_text, original_city, new_city, original_inflections, new_inflections):
+    original_city_desc = summary(original_city)
+    new_city_desc = summary(new_city)
+    
     updated_text = original_text
     for old_inflection, new_inflection in zip(original_inflections, new_inflections):
-        updated_text = re.sub(r'\b' + re.escape(old_inflection) + r'\b', new_inflection, updated_text, flags=re.IGNORECASE)
-    
-    updated_text = updated_text.replace(original_city_desc, new_city_desc)
-    
+        pattern = r'\b' + re.escape(old_inflection) + r'\b'
+        updated_text = re.sub(pattern, new_inflection, updated_text, flags=re.IGNORECASE)
+
+    updated_text = find_best_match_and_replace(updated_text, original_city_desc, new_city_desc)
+
     return updated_text
 
 def save_text_to_word(text, filename):
@@ -40,9 +59,8 @@ def save_text_to_word(text, filename):
 
 def generate_and_save_documents(original_text, city_pairs):
     for original_city, new_city, original_inflections, new_inflections in city_pairs:
-        updated_text = replace_city_and_description_polish(original_text, original_city, new_city, original_inflections, new_inflections)
+        updated_text = replace(original_text, original_city, new_city, original_inflections, new_inflections)
         filename = f'relocation_{new_city}.docx'
-        
         save_text_to_word(updated_text, filename)
         print(f"Saved document for {new_city} as {filename}")
 
@@ -76,64 +94,7 @@ city_pairs = [
 ]
 
 
-
-
-original_text = """Relokacje Maszyn Kraków
-
-Relokacje Maszyn w Krakowie
-
-W historycznym mieście Kraków, relokacja ciężkich maszyn stanowi kluczową usługę, niezbędną dla firm przeprowadzających modernizacje, relokacje lub restrukturyzacje. Wybór profesjonalnego zespołu do przenoszenia maszyn zapewnia nie tylko bezpieczeństwo i integralność kosztownego sprzętu, ale także zgodność z rygorystycznymi przepisami branżowymi. Nasza wiedza specjalistyczna w zakresie relokacji maszyn w Krakowie gwarantuje płynne przejście, minimalizując czas przestoju i maksymalizując efektywność operacyjną.
-
-Czym Jest Relokacja Maszyn?
-
-Relokacja maszyn obejmuje strategiczny demontaż, transport i montaż przemysłowych maszyn. Usługa ta jest kluczowa dla sektorów takich jak produkcja, wytwarzanie i budownictwo, gdzie duże i złożone maszyny wymagają przemieszczenia, zarówno w obrębie tego samego obiektu, do nowej lokalizacji w Krakowie, jak i nawet za granicę. Nasze podejście zapewnia, że każda maszyna jest obsługiwana z najwyższą starannością i precyzją, dostosowaną do specyficznych wymagań każdego urządzenia. Współczesnym biznesem rządzi pieniądz i polityka. Zakłady przemysłowe otwierane są w miejscach, gdzie produkcja będzie opłacalna, a lokalne warunki polityczne będą sprzyjały jej rozwojowi. W przypadku zmian jednego z tych elementów często dochodzi do przeniesienia produkcji w inne miejsce. Innym czynnikiem, determinującym przenosiny, jest brak odpowiedniego areału, umożliwiającego rozbudowę zakładu. Procesy gospodarcze wymuszają niejako konieczność rozwoju, dlatego też jest to tak ważny element w funkcjonowaniu każdego przedsiębiorstwa.
-
-O Krakowie
-
-Kraków, dawna stolica Polski, jest drugim co do wielkości i jednym z najstarszych miast w kraju. Położony nad rzeką Wisłą, Kraków jest ważnym ośrodkiem kulturalnym, edukacyjnym i gospodarczym. Miasto jest znane z zachowania swojego bogatego dziedzictwa kulturowego, które obejmuje wiele zabytków architektury od średniowiecza po nowoczesność. Kraków jest również znaczącym centrum gospodarczym, w którym rozwinął się przemysł technologiczny, farmaceutyczny oraz usługowy. Uniwersytet Jagielloński, założony w 1364 roku, jest jednym z najstarszych na świecie i stanowi główny ośrodek naukowy w Polsce. Miasto słynie również z licznych muzeów i teatrów, przyciągając turystów z całego świata.
-
-
-Dlaczego Warto Wybrać Profesjonalne Usługi Relokacyjne?
-
-Przemieszczanie maszyn w Krakowie jest pełne złożoności i ryzyka. Profesjonalne usługi relokacyjne minimalizują te ryzyka, zapewniając, że wszystkie aspekty przeprowadzki są zarządzane przez doświadczonych profesjonalistów. Proces ten wymaga precyzyjnego planowania, od oceny wagi i wrażliwości sprzętu po określenie najbezpieczniejszej trasy i metody transportu. Bez profesjonalnej obsługi firmy narażają się na uszkodzenia, które mogą prowadzić do znaczących strat finansowych i czasu przestoju operacyjnego. Nasza firma zapewnia kompleksowe zarządzanie projektem relokacji od początku do końca, włączając w to uzgodnienia z lokalnymi władzami oraz dostosowanie do specyficznych regulacji i wymogów technicznych. Efektywnie, bezpiecznie i bez zbędnego ryzyka - tak wyglądają relokacje maszyn z firmą OKSEL. Bez względu na to, czy jest to przenoszenie pojedynczych maszyn, czy przeniesienie całej produkcji, rozumiemy Twoje potrzeby i przemyślenia dotyczące relokacji maszyn. Relokacje przemysłowe, przemieszczanie maszyn to skomplikowane procesy, które zawierają wiele szczegółów. Potrzebujesz profesjonalnego partnera, który wie, jak poprowadzić to od A do Z. My to wiemy, my to rozumiemy, dlatego jesteśmy "specjalistami relokacji maszyn". Firma OKSEL realizuje przeprowadzki maszyn nie tylko w Polsce, ale na całym świecie.
-
-Nasze Usługi w Krakowie
-
-Pomagamy w relokacji zarówno poszczególnych maszyn, jak i całych linii produkcyjnych. Wykonujemy kompleksowe działania w tym zakresie, począwszy od działań planistycznych, przez demontaż maszyn lub też linii produkcyjnych. Na swoje barki bierzemy również transport jak i montaż urządzeń lub też linii produkcyjnych w miejscach docelowych. Każda wykonywana przez nas relokacja maszyn jest efektywna - optymalizujemy wszelkie środki i siły tak, by nasza oferta była konkurencyjna, przy równoczesnym zachowaniu wysokiego poziomu bezpieczeństwa.
-
-Nasze kompleksowe usługi relokacji maszyn w Krakowie obejmują:
-
-- Demontaż: Wykwalifikowani technicy starannie demontują maszyny, klasyfikując i bezpiecznie pakując każdy komponent.
-- Transport: Wykorzystujemy flotę specjalistycznych pojazdów transportowych zaprojektowanych do bezpiecznego przewożenia ciężkich ładunków przez różnorodne tereny. Niezależnie od tego, czy relokacja odbywa się w Krakowie, czy do innego regionu, nasze doświadczenie logistyczne zapewnia terminową i bezpieczną dostawę.
-- Montaż: Po przybyciu do nowej lokalizacji nasz zespół starannie montuje maszyny, zapewniając ich właściwe ustawienie i kalibrację zgodnie z specyfikacjami producenta. Pomagamy również przy uruchomieniu maszyn i linii produkcyjnych. Każda wykonywana przez nas relokacja maszyn jest efektywna - optymalizujemy wszelkie środki i siły tak, by nasza oferta była konkurencyjna, przy równoczesnym zachowaniu wysokiego poziomu bezpieczeństwa.
-
-Jako profesjonaliści zdajemy sobie sprawę, iż tak skomplikowany proces, jakim jest przeniesienie maszyn, wymaga dokładności i precyzji. Przy każdej relokacji linii produkcyjnych lub maszyn wykorzystujemy swoje bogate doświadczenie, dzięki czemu uzyskujemy wysoką skuteczność i zadowolenie każdego klienta.
-
-Korzyści z Wyboru Naszego Zespołu w Krakowie
-
-Nasza firma zajmuje się relokacjami maszyn przemysłowych od wielu lat. Jako specjaliści w tym zakresie posiadamy wieloletnie doświadczenie, które owocuje powodzeniem każdej przeprowadzki maszyn przemysłowych. Nasz zespół specjalistów posiada odpowiednie kwalifikacje do przemieszczania nawet najbardziej skomplikowanych maszyn i relokacji linii produkcyjnych.
-
-Wybór naszego zespołu w Krakowie do potrzeb relokacji maszyn przynosi liczne korzyści:
-
-- Wiedza specjalistyczna: Nasz zespół składa się z weteranów branży z wieloletnim doświadczeniem w obsłudze złożonych relokacji maszyn.
-- Sprawdzone doświadczenie: Pomyślnie przeprowadziliśmy relokację maszyn dla wielu znanych firm w Krakowie i poza nimi, posiadamy studia przypadków i referencje klientów potwierdzające nasze możliwości.
-- Rozwiązania na miarę: Każda relokacja jest unikalna, a nasze usługi są dostosowywane do konkretnych potrzeb i ograniczeń Twojej operacji. Pomagamy w relokacji zarówno poszczególnych maszyn, jak i całych linii produkcyjnych.
-
-Współpracujemy z najlepszymi robotykami, automatykami, gazownikami jak i elektrykami oraz hydraulikami w Polsce. Są to osoby z odpowiednimi uprawnieniami z zakresu swojej działalności. Gwarantujemy Państwu satysfakcję i pełne bezpieczeństwo podczas i po wykonaniu prac relokacyjnych.
-
-Bezpieczeństwo i Zgodność
-
-Bezpieczeństwo jest naszym najwyższym priorytetem. Przestrzegamy wszystkich lokalnych i międzynarodowych norm bezpieczeństwa, zapewniając, że każda faza procesu relokacji jest zgodna z przepisami branżowymi. Nasza polisa na 2 miliony euro zapewnia spokój ducha, chroniąc Twoje aktywa przed nieprzewidzianymi incydentami.
-
-Kontakt i Konsultacje
-
-Aby uzyskać więcej informacji lub umówić się na konsultację, zapraszamy do kontaktu. Nasz zespół jest gotowy, aby zapewnić Ci spersonalizowany plan usług, który spełni Twoje konkretne wymagania, pomagając osiągnąć płynną i efektywną relokację maszyn.
-
-Posiadamy bogate doświadczenie w relokacji maszyn przemysłowych, o czym świadczą nasze referencje. 
-
-Zapraszamy również do zapoznania się z tym, jakie realizacje udało nam się skutecznie wykonać.
-
-Jeśli interesują Cię tematy związane z branżą relokacji maszyn, zerknij na naszego bloga."""
+original_text = """"""
 
 
 generate_and_save_documents(original_text, city_pairs)
