@@ -1,10 +1,9 @@
 import re
 import requests
 from docx import Document
-import difflib
 
 def summary(city, lang='pl'):
-    base_url = "https://{lang}.wikipedia.org/w/api.php".format(lang=lang)
+    base_url = f"https://{lang}.wikipedia.org/w/api.php"
     params = {
         'action': 'query',
         'format': 'json',
@@ -19,60 +18,52 @@ def summary(city, lang='pl'):
     page = next(iter(data['query']['pages'].values()), {})
     return page.get('extract', 'No summary available.')
 
-def find_best_match_and_replace(original_text, original_description, new_description):
-    s = difflib.SequenceMatcher(None, original_text, original_description)
-    best_ratio = 0.5
-    best_match = None
+def titleEndpoint(original_text, title, new_description, endpoint_title): #max_chars
+    start_index = original_text.find(title)
+    if start_index == -1:
+        return original_text
 
-    for block in s.get_matching_blocks():
-        if block.size == 0:
-            continue
-        match_ratio = s.ratio()
-        if match_ratio > best_ratio:
-            best_ratio = match_ratio
-            best_match = block
+    #new_description = new_description[:max_chars]
 
-    if best_match:
-        start, end = best_match.a, best_match.a + best_match.size
-        if end - start > 100:
-            return original_text[:start] + new_description + original_text[end:]
+    end_index = original_text.find(endpoint_title, start_index)
+    if end_index == -1:
+        end_index = len(original_text)
+
+    start_of_section = start_index + len(title)
+    section_to_replace = original_text[start_of_section:end_index].strip()
+
+    return original_text[:start_of_section] + '\n\n' + new_description + '\n\n' + original_text[end_index:]
+
+def replaceInflections(original_text, old_inflections, new_inflections):
+    for old, new in zip(old_inflections, new_inflections):
+        pattern = r'\b' + re.escape(old) + r'\b'
+        original_text = re.sub(pattern, new, original_text, flags=re.IGNORECASE)
     return original_text
 
-
-def replace(original_text, original_city, new_city, original_inflections, new_inflections):
-    original_city_desc = summary(original_city)
-    new_city_desc = summary(new_city)
-    
-    updated_text = original_text
-    for old_inflection, new_inflection in zip(original_inflections, new_inflections):
-        pattern = r'\b' + re.escape(old_inflection) + r'\b'
-        updated_text = re.sub(pattern, new_inflection, updated_text, flags=re.IGNORECASE)
-
-    updated_text = find_best_match_and_replace(updated_text, original_city_desc, new_city_desc)
-
-    return updated_text
-
-def save_text_to_word(text, filename):
+def saveToWord(text, filename):
     doc = Document()
     doc.add_paragraph(text)
     doc.save(filename)
 
-def generate_and_save_documents(original_text, city_pairs):
-    for original_city, new_city, original_inflections, new_inflections in city_pairs:
-        updated_text = replace(original_text, original_city, new_city, original_inflections, new_inflections)
-        filename = f'relocation_{new_city}.docx'
-        save_text_to_word(updated_text, filename)
-        print(f"Saved document for {new_city} as {filename}")
+def pairs(original_text, city_pairs):
+    for old_city, new_city, old_inflections, new_inflections, title, endpoint_title in city_pairs:
+        new_city_desc = summary(new_city)
+        updated_text = titleEndpoint(original_text, title, new_city_desc, endpoint_title) #char limit
+        updated_text = replaceInflections(updated_text, old_inflections, new_inflections)
+        filename = f"Updated_Description_{new_city}.docx"
+        saveToWord(updated_text, filename)
+        print(f"Document saved for {new_city} as {filename}")
+
 
 city_pairs = [
-    ("Kraków", "Łódź", ["Kraków", "Krakowie", "w Krakowie", "Krakowski"], ["Łódź", "Łodzi", "w Łodźi", "Łódzki"]),
-    ("Kraków", "Warszawa", ["Kraków", "Krakowie", "w Krakowie", "Krakowski"], ["Warszawa", "Warszawie", "w Warszawie", "Warszawski"]),
-    ("Kraków", "Wrocław", ["Kraków", "Krakowie", "w Krakowie", "Krakowski"], ["Wrocław", "Wrocławiu", "w Wrocławiu", "Wrocławski"]),
-    ("Kraków", "Poznań", ["Kraków", "Krakowie", "w Krakowie", "Krakowski"], ["Poznań", "Poznaniu", "w Poznaniu", "Poznański"]),
-    ("Kraków", "Gdańsk", ["Kraków", "Krakowie", "w Krakowie", "Krakowski"], ["Gdańska", "Gdańsku", "w Gdańsku", "Gdański"]),
-    ("Kraków", "Szczecin", ["Kraków", "Krakowie", "w Krakowie", "Krakowski"], ["Szczecin", "Szczecinie", "w Szczecinie", "Szczeciński"]),
-    ("Kraków", "Bydgoszcz", ["Kraków", "Krakowie", "w Krakowie", "Krakowski"], ["Bydgoszcz", "Bydgoszczy", "w Bydgoszczy", "Bydgoski"]),
-    ("Kraków", "Lublin", ["Kraków", "Krakowie", "w Krakowie", "Krakowski"], ["Lublin", "Lublinie", "w Lublinie", "Lubelski"]),
+    ("Kraków", "Łódź", ["Kraków", "Krakowie", "w Krakowie", "Krakowski"], ["Łódź", "Łodzi", "w Łodźi", "Łódzki"], "O Krakowie", "Nasze Usługi w Krakowie"),
+    ("Kraków", "Warszawa", ["Kraków", "Krakowie", "w Krakowie", "Krakowski"], ["Warszawa", "Warszawie", "w Warszawie", "Warszawski"], "O Krakowie", "Nasze Usługi w Krakowie"),
+    ("Kraków", "Wrocław", ["Kraków", "Krakowie", "w Krakowie", "Krakowski"], ["Wrocław", "Wrocławiu", "w Wrocławiu", "Wrocławski"], "O Krakowie", "Nasze Usługi w Krakowie"),
+    ("Kraków", "Poznań", ["Kraków", "Krakowie", "w Krakowie", "Krakowski"], ["Poznań", "Poznaniu", "w Poznaniu", "Poznański"], "O Krakowie", "Nasze Usługi w Krakowie"),
+    ("Kraków", "Gdańsk", ["Kraków", "Krakowie", "w Krakowie", "Krakowski"], ["Gdańska", "Gdańsku", "w Gdańsku", "Gdański"], "O Krakowie", "Nasze Usługi w Krakowie"),
+    ("Kraków", "Szczecin", ["Kraków", "Krakowie", "w Krakowie", "Krakowski"], ["Szczecin", "Szczecinie", "w Szczecinie", "Szczeciński"], "O Krakowie", "Nasze Usługi w Krakowie"),
+    ("Kraków", "Bydgoszcz", ["Kraków", "Krakowie", "w Krakowie", "Krakowski"], ["Bydgoszcz", "Bydgoszczy", "w Bydgoszczy", "Bydgoski"], "O Krakowie", "Nasze Usługi w Krakowie"),
+    ("Kraków", "Lublin", ["Kraków", "Krakowie", "w Krakowie", "Krakowski"], ["Lublin", "Lublinie", "w Lublinie", "Lubelski"], "O Krakowie", "Nasze Usługi w Krakowie"),
     # ("Kraków", "Łódź", ["Kraków", "Krakowie", "w Krakowie", "Krakowski"], ["Łódź", "Łodzi", "w Łodźi"]),
     # ("Kraków", "Łódź", ["Kraków", "Krakowie", "w Krakowie", "Krakowski"], ["Łódź", "Łodzi", "w Łodźi"]),
     # ("Kraków", "Łódź", ["Kraków", "Krakowie", "w Krakowie", "Krakowski"], ["Łódź", "Łodzi", "w Łodźi"]),
@@ -97,4 +88,4 @@ city_pairs = [
 original_text = """"""
 
 
-generate_and_save_documents(original_text, city_pairs)
+pairs(original_text, city_pairs)
